@@ -101,7 +101,7 @@ async def test_prompt_injection_in_content_does_not_reach_other_users_data(demo_
         }
     )
     rt = await _rt(demo_dir, llm)
-    res = await rt.orchestrator.chat(rt.identity.anonymous(), "What does the notice say about the leave policy?")
+    await rt.orchestrator.chat(rt.identity.anonymous(), "What does the notice say about the leave policy?")
     context = llm.prompts[-1]
     assert "26 days" not in context and "staff-handbook" not in context  # restricted content never reaches the LLM
     assert "untrusted data" in rt_system_prompt()

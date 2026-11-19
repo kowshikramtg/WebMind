@@ -93,7 +93,7 @@ async def test_pgvector_runtime_end_to_end(demo_dir, pg_schema):
     rows = (await rt.datasets.query_records(rev, RecordQuery(dataset="projects"))).rows
     assert rows and {r["department"] for r in rows} == {"engineering"}
 
-    with pytest.raises(Exception, match="(?i)read-only"):
-        with rt.datasets._engine(rt.cfg.dataset("projects")).begin() as c:
-            c.execute(text("DELETE FROM projects"))
+    engine = rt.datasets._engine(rt.cfg.dataset("projects"))
+    with pytest.raises(Exception, match="(?i)read-only"), engine.begin() as c:
+        c.execute(text("DELETE FROM projects"))
     await rt.close()

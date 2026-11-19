@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator, Callable
-from typing import Any, Union
+from typing import Any
 
 import httpx
 
-TokenSource = Union[str, Callable[[], "str | None"], None]
+TokenSource = str | Callable[[], str | None] | None
 
 
 class WebMindAPIError(Exception):

@@ -62,4 +62,4 @@ for await (const ev of wm.stream("Summarize the admissions page")) { /* plan | t
 - Answers and citations are rendered as text nodes, and only `http(s)` links are rendered.
 - Class names (`wm-chat`, `wm-answer`, `wm-citations`, …) are stable for styling.
 
-For full integration guides, see [docs/integration.md](../../docs/integration.md).
+For full integration guides, see [INTEGRATION.md](../../INTEGRATION.md).

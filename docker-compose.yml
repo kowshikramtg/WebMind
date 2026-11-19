@@ -1,0 +1,60 @@
+# WebMind — Docker Compose deployment.
+#
+#   cp .env.example .env            # then edit secrets
+#   docker compose up -d            # API + PostgreSQL/pgvector
+#   docker compose run --rm webmind webmind index
+#   docker compose --profile local-llm up -d   # optional local LLM (Ollama)
+#
+# The API listens on 127.0.0.1:8080 only; put your reverse proxy (TLS) in front of it.
+
+services:
+  webmind:
+    build: .
+    image: webmind:0.1.0
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      WEBMIND_CONFIG: /app/config/webmind.yaml
+      WEBMIND_DATABASE_URL: postgresql+psycopg://webmind:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/webmind
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./deployments/docker/webmind.yaml:/app/config/webmind.yaml:ro
+      - ${WEBMIND_CONTENT_DIR:-./deployments/docker/content}:/app/content:ro
+      - webmind-data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: webmind
+      POSTGRES_USER: webmind
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U webmind -d webmind"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # Not published to the host. Use `docker compose exec postgres psql -U webmind` for access.
+
+  ollama:
+    image: ollama/ollama:latest   # pin a specific version for production
+    profiles: ["local-llm"]
+    restart: unless-stopped
+    volumes:
+      - ollama-data:/root/.ollama
+    # Pull models with: docker compose exec ollama ollama pull llama3.1
+
+volumes:
+  webmind-data:
+  postgres-data:
+  ollama-data:

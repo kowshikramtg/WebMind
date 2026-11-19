@@ -1,0 +1,24 @@
+# systemd unit for a native WebMind installation.
+#   sudo useradd --system --home /opt/webmind webmind
+#   python3 -m venv /opt/webmind/.venv && /opt/webmind/.venv/bin/pip install "webmind[postgres,pdf,xlsx,reports]"
+#   sudo cp webmind.service /etc/systemd/system/ && sudo systemctl enable --now webmind
+[Unit]
+Description=WebMind API
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+User=webmind
+Group=webmind
+WorkingDirectory=/opt/webmind
+EnvironmentFile=/opt/webmind/.env
+ExecStart=/opt/webmind/.venv/bin/webmind serve --config /opt/webmind/webmind.yaml
+Restart=on-failure
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/webmind/data
+
+[Install]
+WantedBy=multi-user.target

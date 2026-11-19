@@ -14,7 +14,7 @@ capabilities without running a separate server::
 
 Identity passed to ``ask`` is trusted: your backend is responsible for having
 authenticated the user. For browser or cross-service access, run the HTTP server and
-use signed tokens instead (see docs/integration.md).
+use signed tokens instead (see INTEGRATION.md).
 """
 
 from __future__ import annotations

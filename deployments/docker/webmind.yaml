@@ -1,0 +1,63 @@
+# Configuration used by docker-compose.yml. Values come from .env.
+app:
+  name: webmind
+  environment: production
+  data_dir: /app/data
+
+server:
+  host: 0.0.0.0
+  port: 8080
+  cors_origins: ["${WEBMIND_CORS_ORIGIN:-http://localhost:8000}"]
+  admin_api_key: ${WEBMIND_ADMIN_API_KEY:-}
+
+database:
+  url: ${WEBMIND_DATABASE_URL}
+
+vector_store:
+  provider: pgvector
+
+object_store:
+  provider: local
+  path: /app/data/objects
+
+llm:
+  provider: ${WEBMIND_LLM_PROVIDER:-none}
+  model: ${WEBMIND_LLM_MODEL:-}
+  base_url: ${WEBMIND_LLM_BASE_URL:-}
+  api_key: ${WEBMIND_LLM_API_KEY:-}
+
+embeddings:
+  provider: hashing   # switch to ollama/openai/sentence_transformers for semantic search, then `webmind index --reembed`
+
+security:
+  authentication:
+    mode: host_application
+    allow_anonymous: true
+    anonymous_roles: [public]
+    jwt:
+      algorithms: [HS256]
+      secret: ${WEBMIND_JWT_SECRET}
+  roles:
+    public:
+      capabilities: [chat, search, navigate, "documents:read"]
+    member:
+      inherits: [public]
+      capabilities: ["records:read", analytics, export]
+    admin:
+      inherits: [member]
+      capabilities: [reports, "sync:status"]
+
+synchronization:
+  enabled: true
+  scheduler: true
+
+sources:
+  - id: content
+    type: filesystem
+    path: /app/content
+    patterns: ["**/*.html", "**/*.md", "**/*.txt", "**/*.pdf"]
+    base_url: ${WEBMIND_SITE_URL:-http://localhost:8000}
+    access: { visibility: public }
+    sync: { interval_minutes: 60 }
+
+datasets: []

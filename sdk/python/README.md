@@ -27,5 +27,5 @@ with WebMindClient("http://localhost:8080", token=token) as wm:
 ```
 
 `AsyncWebMindClient` offers the same methods for asyncio apps, plus `stream()` for
-server-sent events. See [docs/integration.md](../../docs/integration.md) for complete
+server-sent events. See [INTEGRATION.md](../../INTEGRATION.md) for complete
 integration patterns.
