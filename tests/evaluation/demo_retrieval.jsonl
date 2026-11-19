@@ -1,0 +1,15 @@
+{"question": "Where can I find the eligibility requirements?", "expected": ["admissions.html#eligibility"]}
+{"question": "What does tuition cost?", "expected": ["admissions.html#fees"]}
+{"question": "When is the application deadline?", "expected": ["admissions.html#deadlines"]}
+{"question": "Which documents do I need to apply?", "expected": ["admissions.html#how-to-apply"]}
+{"question": "merit scholarship for high grades", "expected": ["scholarships.html#merit-scholarship"]}
+{"question": "grants for low-income households", "expected": ["scholarships.html#need-based-grants"]}
+{"question": "evening certificates for working professionals", "expected": ["services.html#continuing-education"]}
+{"question": "help with internships and CV reviews", "expected": ["services.html#career-services"]}
+{"question": "applied research projects for companies", "expected": ["services.html#research-consulting"]}
+{"question": "when was the institute founded", "expected": ["about.html#history"]}
+{"question": "office opening hours and contact", "expected": ["about.html#contact"]}
+{"question": "exam timetable publication", "expected": ["student-handbook-2026.pdf#page=2"]}
+{"question": "how many books can students borrow from the library", "expected": ["student-handbook-2026.pdf#page=3"]}
+{"question": "annual leave days for staff", "expected": ["staff-handbook.html#leave-policy"], "user": {"roles": ["employee"]}}
+{"question": "travel expense approval", "expected": ["staff-handbook.html#expense-policy"], "user": {"roles": ["employee"]}}

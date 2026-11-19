@@ -1,0 +1,128 @@
+# WebMind demo configuration — Lumen Valley Institute (fictional).
+#
+# 1. python examples/basic-website/setup_demo.py     # PDFs + records.db
+# 2. export WEBMIND_JWT_SECRET=<32+ random chars>    # see .env.example
+# 3. webmind index  --config examples/basic-website/webmind.yaml
+# 4. webmind serve  --config examples/basic-website/webmind.yaml
+#
+# Relative paths are resolved against this file's directory.
+
+app:
+  name: lumen-valley-demo
+  environment: development
+  data_dir: ./data
+
+server:
+  host: 127.0.0.1
+  port: 8080
+  cors_origins: ["http://localhost:8000", "http://127.0.0.1:8000"]
+  admin_api_key: ${WEBMIND_ADMIN_API_KEY:-}
+
+database:
+  url: sqlite:///./data/webmind.db
+
+object_store:
+  provider: local
+  path: ./data/objects
+
+# No LLM by default: answers are extractive (quoted from sources, still cited).
+# Switch to a local model with Ollama, or any provider — see docs/configuration.md.
+llm:
+  provider: ${WEBMIND_LLM_PROVIDER:-none}
+  model: ${WEBMIND_LLM_MODEL:-}
+  base_url: ${WEBMIND_LLM_BASE_URL:-}
+  api_key: ${WEBMIND_LLM_API_KEY:-}
+
+embeddings:
+  provider: hashing        # zero-dependency lexical baseline; use ollama/openai/sentence_transformers for semantic search
+
+retrieval:
+  hybrid_search: true
+  top_k: 6
+
+security:
+  authentication:
+    mode: host_application
+    allow_anonymous: true            # public visitors may ask about public pages
+    anonymous_roles: [public]
+    jwt:
+      algorithms: [HS256]
+      secret: ${WEBMIND_JWT_SECRET}
+  roles:
+    public:
+      capabilities: [chat, search, navigate, "documents:read"]
+    student:
+      inherits: [public]
+    employee:
+      inherits: [public]
+      capabilities: ["records:read", analytics]
+    reviewer:
+      inherits: [employee]
+      capabilities: [export]
+    manager:
+      inherits: [reviewer]
+      capabilities: [reports]
+    admin:
+      inherits: [manager]
+      capabilities: ["sync:status"]
+
+sources:
+  - id: website
+    type: filesystem                 # the static site files; use `type: website` + url to crawl over HTTP
+    path: ./site
+    patterns: ["**/*.html"]
+    base_url: http://localhost:8000
+    access: { visibility: public }
+    path_rules:
+      - pattern: "^internal/"
+        access: { visibility: restricted, roles: [employee, reviewer, manager, admin] }
+
+  - id: documents
+    type: filesystem
+    path: ./generated/docs
+    patterns: ["**/*.pdf"]
+    base_url: http://localhost:8000/docs
+    access: { visibility: public }
+    path_rules:
+      - pattern: "research-report"
+        access: { visibility: restricted, attributes: { department: [research, engineering] } }
+
+datasets:
+  - id: projects
+    description: Institute projects with department, status, creation date and budget
+    synonyms: [project, records, record]
+    connection: sqlite:///./generated/records.db
+    table: projects
+    date_column: created_at
+    columns:
+      - { name: id, type: integer, filterable: false }
+      - { name: name, type: string, description: Project name }
+      - { name: department, type: string, groupable: true, values: [engineering, research, admissions, finance] }
+      - { name: status, type: string, groupable: true, values: [planned, active, completed] }
+      - { name: created_at, type: date, label: Created }
+      - { name: budget, type: number, aggregatable: true }
+    access: { visibility: restricted, roles: [employee, reviewer, manager, admin] }
+    row_filters:
+      # Users only see their own department's rows unless they are managers/admins.
+      - { column: department, equals_attribute: department, unless_roles: [manager, admin] }
+    date_window:
+      # Reviewers may only see records inside their assigned review window.
+      from_attribute: review_from
+      to_attribute: review_to
+      unless_roles: [employee, manager, admin]
+    max_rows: 500
+
+  - id: monthly_metrics
+    description: Monthly registrations and revenue per department
+    synonyms: [performance, registrations, revenue, metrics]
+    connection: sqlite:///./generated/records.db
+    table: monthly_metrics
+    date_column: month
+    columns:
+      - { name: month, type: date }
+      - { name: department, type: string, groupable: true, values: [engineering, research, admissions, finance] }
+      - { name: registrations, type: integer, aggregatable: true }
+      - { name: revenue, type: number, aggregatable: true }
+    access: { visibility: restricted, roles: [employee, reviewer, manager, admin] }
+    row_filters:
+      - { column: department, equals_attribute: department, unless_roles: [manager, admin] }
