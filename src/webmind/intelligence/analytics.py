@@ -149,6 +149,8 @@ def _read_only_engine(url: str, base_dir: str | Path) -> Engine:
             cur = dbapi_conn.cursor()
             cur.execute("SET SESSION CHARACTERISTICS AS TRANSACTION READ ONLY")
             cur.close()
+            # Commit so a later pool reset (ROLLBACK) cannot revert the session setting.
+            dbapi_conn.commit()
 
         return engine
     if backend in ("mysql", "mariadb"):
@@ -159,6 +161,7 @@ def _read_only_engine(url: str, base_dir: str | Path) -> Engine:
             cur = dbapi_conn.cursor()
             cur.execute("SET SESSION TRANSACTION READ ONLY")
             cur.close()
+            dbapi_conn.commit()
 
         return engine
     raise ConfigurationError(f"unsupported dataset backend '{backend}' (sqlite, postgresql, mysql)")

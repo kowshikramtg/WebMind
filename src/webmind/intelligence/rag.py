@@ -99,6 +99,8 @@ def enforce_citations(answer: str, n_sources: int) -> tuple[str, list[int]]:
         return ""
 
     cleaned = _CITE.sub(repl, answer)
+    cleaned = re.sub(r"[ 	]+([.,;:!?])", r"", cleaned)
+    cleaned = re.sub(r"[ 	]{2,}", " ", cleaned)
     return cleaned.strip(), cited
 
 
