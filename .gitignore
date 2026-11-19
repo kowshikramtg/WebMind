@@ -1,1 +1,43 @@
 IDEA.md
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+sdk/react/dist/
+*.tsbuildinfo
+
+# Secrets and local configuration — never commit these
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+webmind.local.yaml
+
+# Runtime data (indexes, object store, exports, demo databases)
+data/
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+examples/**/generated/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
