@@ -30,6 +30,7 @@ class PreviousState(BaseModel):
     last_modified: str | None = None
     change_hint: str | None = None
     content_hash: str | None = None
+    links: list[str] = []
 
 
 class FetchResult(BaseModel):
@@ -53,6 +54,7 @@ class SourceConnector(ABC):
         # Set by discover(); when True the discovery covered the whole source, so
         # resources that were not seen can be treated as deleted.
         self.discovery_complete = False
+        self.previous: dict[str, PreviousState] = {}
 
     @abstractmethod
     def discover(self) -> AsyncIterator[ResourceRef]:
@@ -61,6 +63,10 @@ class SourceConnector(ABC):
     @abstractmethod
     async def fetch(self, ref: ResourceRef, previous: PreviousState | None = None) -> FetchResult:
         """Fetch a resource, using ``previous`` for conditional requests where supported."""
+
+    def prepare(self, previous: dict[str, PreviousState]) -> None:
+        """Receive known state for all resources of this source before discovery."""
+        self.previous = previous
 
     async def confirm_missing(self, uri: str) -> bool:
         """Return True only if the resource is definitively gone from the source."""
