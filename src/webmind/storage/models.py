@@ -85,6 +85,8 @@ class Resource(Base):
     last_indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(Text)
+    # Outgoing links (website sources) so unchanged pages (HTTP 304) still feed discovery.
+    links: Mapped[list[Any]] = mapped_column(JSON, default=list)
 
     versions: Mapped[list[ResourceVersion]] = relationship(
         back_populates="resource", cascade="all, delete-orphan", order_by="ResourceVersion.version"
@@ -115,9 +117,7 @@ class Document(Base):
 
     __tablename__ = "documents"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
-    version_id: Mapped[str] = mapped_column(
-        ForeignKey("resource_versions.id", ondelete="CASCADE"), unique=True
-    )
+    version_id: Mapped[str] = mapped_column(ForeignKey("resource_versions.id", ondelete="CASCADE"), unique=True)
     title: Mapped[str | None] = mapped_column(String(1024))
     description: Mapped[str | None] = mapped_column(Text)
     text_hash: Mapped[str] = mapped_column(String(64))
@@ -197,9 +197,7 @@ class Conversation(Base):
 class ConversationMessage(Base):
     __tablename__ = "conversation_messages"
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
-    conversation_id: Mapped[str] = mapped_column(
-        ForeignKey("conversations.id", ondelete="CASCADE"), index=True
-    )
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id", ondelete="CASCADE"), index=True)
     role: Mapped[str] = mapped_column(String(16))
     content: Mapped[str] = mapped_column(Text)
     intent: Mapped[str | None] = mapped_column(String(32))

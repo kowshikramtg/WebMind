@@ -69,9 +69,16 @@ class LLMConfig(_Model):
     base_url: str | None = None
     api_key: SecretStr | None = None
     temperature: float = Field(default=0.1, ge=0.0, le=2.0)
-    max_tokens: int = Field(default=1024, ge=16, le=64_000)
-    timeout_seconds: float = Field(default=60.0, gt=0)
+    max_tokens: int = Field(default=4096, ge=16, le=128_000)
+    timeout_seconds: float = Field(default=120.0, gt=0)
     use_for_planning: bool = True
+    # Anthropic-specific options (ignored by other providers).
+    effort: Literal["low", "medium", "high", "xhigh", "max"] | None = Field(
+        default=None, description="Anthropic output_config.effort; None uses the model default"
+    )
+    refusal_fallback: Literal["default", "none"] = Field(
+        default="default", description="Anthropic server-side refusal fallback routing"
+    )
 
     @model_validator(mode="after")
     def _check(self) -> LLMConfig:
@@ -205,9 +212,7 @@ class AuthenticationConfig(_Model):
 def _default_roles() -> dict[str, RoleConfig]:
     return {
         "public": RoleConfig(capabilities=["chat", "search", "navigate", "documents:read"]),
-        "admin": RoleConfig(
-            capabilities=["records:read", "analytics", "export", "reports"], inherits=["public"]
-        ),
+        "admin": RoleConfig(capabilities=["records:read", "analytics", "export", "reports"], inherits=["public"]),
     }
 
 

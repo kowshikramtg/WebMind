@@ -35,9 +35,7 @@ def test_unset_secret_is_treated_as_missing(monkeypatch):
 
 def test_short_hs256_secret_rejected():
     with pytest.raises(ConfigurationError, match="at least 32"):
-        config_from_dict(
-            {"security": {"authentication": {"mode": "host_application", "jwt": {"secret": "short"}}}}
-        )
+        config_from_dict({"security": {"authentication": {"mode": "host_application", "jwt": {"secret": "short"}}}})
 
 
 def test_unknown_keys_rejected():
@@ -56,9 +54,7 @@ def test_source_discriminator_and_unique_ids():
     )
     assert [s.type for s in cfg.sources] == ["website", "filesystem"]
     with pytest.raises(ConfigurationError, match="unique"):
-        config_from_dict(
-            {"sources": [{"id": "a", "type": "filesystem", "path": "."}] * 2}
-        )
+        config_from_dict({"sources": [{"id": "a", "type": "filesystem", "path": "."}] * 2})
 
 
 def test_dataset_column_references_validated():
@@ -78,8 +74,16 @@ def test_dataset_column_references_validated():
 def test_public_access_rule_cannot_have_roles():
     with pytest.raises(ConfigurationError):
         config_from_dict(
-            {"sources": [{"id": "a", "type": "filesystem", "path": ".",
-                          "access": {"visibility": "public", "roles": ["admin"]}}]}
+            {
+                "sources": [
+                    {
+                        "id": "a",
+                        "type": "filesystem",
+                        "path": ".",
+                        "access": {"visibility": "public", "roles": ["admin"]},
+                    }
+                ]
+            }
         )
 
 

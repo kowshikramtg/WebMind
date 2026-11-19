@@ -50,9 +50,7 @@ class Database:
         self.url = url
         backend = make_url(url).get_backend_name()
         if backend not in ("sqlite", "postgresql"):
-            raise ConfigurationError(
-                f"unsupported metadata database '{backend}' (supported: sqlite, postgresql)"
-            )
+            raise ConfigurationError(f"unsupported metadata database '{backend}' (supported: sqlite, postgresql)")
         self.dialect = backend
         kwargs: dict = {"echo": echo, "future": True}
         if backend == "sqlite":

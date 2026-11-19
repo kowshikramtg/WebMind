@@ -58,9 +58,7 @@ def normalize(vec: Sequence[float]) -> list[float]:
 
 class KeywordIndex(ABC):
     @abstractmethod
-    def search(
-        self, query: str, *, tenant_id: str, resource_ids: Sequence[str], k: int
-    ) -> list[tuple[str, float]]:
+    def search(self, query: str, *, tenant_id: str, resource_ids: Sequence[str], k: int) -> list[tuple[str, float]]:
         """Return (chunk_id, score) pairs, best first. Higher score is better."""
 
 
@@ -82,9 +80,7 @@ class SqliteFtsKeywordIndex(KeywordIndex):
             "ORDER BY rank LIMIT :k"
         ).bindparams(bindparam("rids", expanding=True))
         with self.db.engine.connect() as conn:
-            rows = conn.execute(
-                stmt, {"match": match, "tenant": tenant_id, "rids": list(resource_ids), "k": k}
-            ).all()
+            rows = conn.execute(stmt, {"match": match, "tenant": tenant_id, "rids": list(resource_ids), "k": k}).all()
         return [(r.id, -float(r.rank)) for r in rows]
 
 
@@ -105,9 +101,7 @@ class PostgresFtsKeywordIndex(KeywordIndex):
             "ORDER BY rank DESC LIMIT :k"
         ).bindparams(bindparam("rids", expanding=True))
         with self.db.engine.connect() as conn:
-            rows = conn.execute(
-                stmt, {"q": tsquery, "tenant": tenant_id, "rids": list(resource_ids), "k": k}
-            ).all()
+            rows = conn.execute(stmt, {"q": tsquery, "tenant": tenant_id, "rids": list(resource_ids), "k": k}).all()
         return [(r.id, float(r.rank)) for r in rows]
 
 
@@ -275,10 +269,7 @@ class PgVectorStore(VectorStore):
                 )
             )
             conn.execute(
-                text(
-                    "CREATE INDEX IF NOT EXISTS ix_webmind_vectors_scope ON webmind_vectors "
-                    "(tenant_id, resource_id)"
-                )
+                text("CREATE INDEX IF NOT EXISTS ix_webmind_vectors_scope ON webmind_vectors (tenant_id, resource_id)")
             )
 
     @staticmethod
@@ -296,18 +287,13 @@ class PgVectorStore(VectorStore):
         with self.db.engine.begin() as conn:
             conn.execute(
                 stmt,
-                [
-                    {"c": c, "t": t, "r": r, "m": model_id, "v": self._literal(normalize(v))}
-                    for c, t, r, v in items
-                ],
+                [{"c": c, "t": t, "r": r, "m": model_id, "v": self._literal(normalize(v))} for c, t, r, v in items],
             )
 
     def delete(self, chunk_ids):
         if not chunk_ids:
             return
-        stmt = text("DELETE FROM webmind_vectors WHERE chunk_id IN :ids").bindparams(
-            bindparam("ids", expanding=True)
-        )
+        stmt = text("DELETE FROM webmind_vectors WHERE chunk_id IN :ids").bindparams(bindparam("ids", expanding=True))
         with self.db.engine.begin() as conn:
             conn.execute(stmt, {"ids": list(chunk_ids)})
 

@@ -47,12 +47,13 @@ reports = ["reportlab>=4.0"]
 postgres = ["psycopg[binary]>=3.1"]
 mysql = ["pymysql>=1.1"]
 rsa = ["cryptography>=42"]
+anthropic = ["anthropic>=2.0"]
 numpy = ["numpy>=1.26"]
 rerank = ["sentence-transformers>=2.6"]
 local-embeddings = ["sentence-transformers>=2.6"]
 langgraph = ["langgraph>=0.2"]
 all = [
-  "webmind[pdf,docx,xlsx,reports,postgres,mysql,rsa,numpy]",
+  "webmind[pdf,docx,xlsx,reports,postgres,mysql,rsa,numpy,anthropic]",
 ]
 dev = [
   "webmind[pdf,xlsx,reports,numpy]",
@@ -89,7 +90,7 @@ markers = [
 filterwarnings = ["ignore::DeprecationWarning:reportlab.*"]
 
 [tool.ruff]
-line-length = 110
+line-length = 120
 target-version = "py310"
 src = ["src", "tests"]
 
@@ -98,7 +99,9 @@ select = ["E", "F", "W", "I", "B", "UP", "S", "SIM"]
 ignore = [
   "S101",  # assert is fine in tests
   "B008",  # FastAPI Depends() in defaults
+  "E501",   # line length is enforced by `ruff format`; long strings are allowed
   "SIM102", # nested ifs are often clearer
+  "SIM105", # explicit try/except/pass is fine
   "SIM905", # str.split word lists are readable
   "S608",  # SQL is built with SQLAlchemy Core / bound params; flagged false-positives on text()
 ]

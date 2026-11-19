@@ -20,8 +20,7 @@ class ProviderNotInstalledError(ProviderError):
 
     def __init__(self, provider: str, extra: str) -> None:
         super().__init__(
-            f"provider '{provider}' requires optional dependencies; "
-            f"install with: pip install 'webmind[{extra}]'"
+            f"provider '{provider}' requires optional dependencies; install with: pip install 'webmind[{extra}]'"
         )
 
 
