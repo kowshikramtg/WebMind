@@ -315,6 +315,7 @@ npm install /path/to/WebMind/sdk/react       # until published on npm
 
 ```tsx
 import { WebMindProvider, WebMindChat } from "@webmind/react";
+import "@webmind/react/styles.css";
 
 const getSessionToken = async () => {
   const r = await fetch("/api/webmind-token", { credentials: "include" });
@@ -374,6 +375,23 @@ for await (const ev of wm.stream("Summarize the admissions page")) {
 
 Always render answers and citation text as **text**, not HTML, and only allow `http(s)`
 links. The bundled widget and React components already do both.
+
+### 5.4 Appearance, exports and mobile
+
+The assistant is an iOS-inspired interface: translucent panel, message bubbles, expandable sources with document
+previews, interactive charts, tables, light/dark, and a bottom sheet on phones. Configure it with script attributes
+(or React props): `data-title`, `data-subtitle`, `data-theme` (`auto | light | dark`), `data-accent`,
+`data-suggestions="Q one|Q two"`, `data-login-url="/login"` (a "Sign in" link for anonymous visitors), `data-position`, `data-streaming`, `data-open`. Full list and screenshots:
+[docs/frontend.md](docs/frontend.md).
+
+- **Declare a viewport** on your pages (`<meta name="viewport" content="width=device-width, initial-scale=1">`).
+  Without it phones render the page at ~980px and shrink the assistant too.
+- **Exports.** Users can download charts (PNG, SVG, Excel, CSV), aggregate tables (Excel, CSV, JSON) and answers
+  (Markdown, PDF). Raw record tables are exported by the server through the permission-checked `export`
+  capability (Excel, CSV, PDF, JSON). Control client-side exports with `data-client-exports="aggregates | all | off"`.
+- **One system.** Serve your pages and the assistant from the same site, as the demo host app does
+  (`examples/fastapi-integration/app.py`): it serves the pages, protects internal ones, injects the script, and
+  signs the persona's token. Run it with [examples/basic-website/DEMO.md](examples/basic-website/DEMO.md).
 
 ---
 

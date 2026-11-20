@@ -1,0 +1,138 @@
+# WebMind demo configuration + Ollama LLM experiment — Lumen Valley Institute (fictional).
+#
+# 1. python examples/basic-website/setup_demo.py     # PDFs + records.db
+# 2. export WEBMIND_JWT_SECRET=<32+ random chars>    # see .env.example
+# 3. webmind index  --config examples/basic-website/webmind.yaml
+# 4. webmind serve  --config examples/basic-website/webmind.yaml
+#
+# Relative paths are resolved against this file's directory.
+
+app:
+  name: lumen-valley-demo
+  environment: development
+  data_dir: ./data
+
+server:
+  host: 127.0.0.1
+  port: 8080
+  cors_origins: ["http://localhost:8000", "http://127.0.0.1:8000", "http://localhost:8001", "http://127.0.0.1:8001"]
+  admin_api_key: ${WEBMIND_ADMIN_API_KEY:-}
+
+database:
+  url: sqlite:///./data/webmind.db
+
+object_store:
+  provider: local
+  path: ./data/objects
+
+# EXPERIMENT: real LLM answer generation with Ollama. Retrieval is unchanged: same
+# hashing/512 embeddings, same index (same data/ directory), same sources/datasets/policies.
+# Only this llm block differs from webmind.yaml.
+llm:
+  provider: ollama
+  model: llama3.2:latest
+  base_url: http://localhost:11434
+  temperature: 0.1
+  max_tokens: 1024
+  use_for_planning: false   # rule-based planner picks tools/queries; the LLM only writes answers
+
+embeddings:
+  provider: hashing        # zero-dependency lexical baseline; use ollama/openai/sentence_transformers for semantic search
+
+retrieval:
+  hybrid_search: true
+  top_k: 6
+
+security:
+  authentication:
+    mode: host_application
+    allow_anonymous: true            # public visitors may ask about public pages
+    anonymous_roles: [public]
+    jwt:
+      algorithms: [HS256]
+      secret: ${WEBMIND_JWT_SECRET}
+  roles:
+    public:
+      # `analytics` = aggregates and charts only. Raw rows need `records:read`; downloads need `export`.
+      # Which datasets/fields are actually reachable is decided per dataset and per column below.
+      capabilities: [chat, search, navigate, "documents:read", analytics]
+    student:
+      inherits: [public]
+    employee:
+      inherits: [public]
+      capabilities: ["records:read", analytics]
+    reviewer:
+      inherits: [employee]
+      capabilities: [export]
+    manager:
+      inherits: [reviewer]
+      capabilities: [reports]
+    admin:
+      inherits: [manager]
+      capabilities: ["sync:status"]
+
+sources:
+  - id: website
+    type: filesystem                 # the static site files; use `type: website` + url to crawl over HTTP
+    path: ./site
+    patterns: ["**/*.html"]
+    base_url: http://localhost:8000
+    access: { visibility: public }
+    path_rules:
+      - pattern: "^internal/"
+        access: { visibility: restricted, roles: [employee, reviewer, manager, admin] }
+
+  - id: documents
+    type: filesystem
+    path: ./generated/docs
+    patterns: ["**/*.pdf"]
+    base_url: http://localhost:8000/docs
+    access: { visibility: public }
+    path_rules:
+      - pattern: "research-report"
+        access: { visibility: restricted, attributes: { department: [research, engineering] } }
+
+datasets:
+  - id: projects
+    description: Institute projects with department, status, creation date and budget
+    # Public demo policy: visitors may chart/count projects by department, status and date (aggregates only).
+    # Project names and budgets are protected fields; raw rows need records:read (staff only).
+    synonyms: [project, records, record]
+    connection: sqlite:///./generated/records.db
+    table: projects
+    date_column: created_at
+    columns:
+      - { name: id, type: integer, filterable: false, access: { visibility: restricted, roles: [employee, reviewer, manager, admin] } }
+      - { name: name, type: string, description: Project name, access: { visibility: restricted, roles: [employee, reviewer, manager, admin] } }
+      - { name: department, type: string, groupable: true, values: [engineering, research, admissions, finance] }
+      - { name: status, type: string, groupable: true, values: [planned, active, completed] }
+      - { name: created_at, type: date, label: Created }
+      - { name: budget, type: number, aggregatable: true, access: { visibility: restricted, roles: [employee, reviewer, manager, admin] } }
+    access: { visibility: public }
+    row_filters:
+      # Staff only see their own department's rows (raw records and protected fields such as budget),
+      # unless they are managers/admins. Aggregates over public fields are institute-wide.
+      - { column: department, equals_attribute: department, unless_roles: [manager, admin], applies_to: protected_fields }
+    date_window:
+      # Reviewers may only see records inside their assigned review window.
+      from_attribute: review_from
+      to_attribute: review_to
+      unless_roles: [employee, manager, admin]
+      applies_to: protected_fields
+    max_rows: 500
+
+  - id: monthly_metrics
+    description: Monthly registrations and revenue per department
+    synonyms: [performance, registrations, revenue, metrics]
+    connection: sqlite:///./generated/records.db
+    table: monthly_metrics
+    date_column: month
+    columns:
+      - { name: month, type: date }
+      - { name: department, type: string, groupable: true, values: [engineering, research, admissions, finance] }
+      - { name: registrations, type: integer, aggregatable: true }
+      - { name: revenue, type: number, aggregatable: true, access: { visibility: restricted, roles: [employee, reviewer, manager, admin] } }
+    # Public demo policy: monthly registrations per department are published statistics; revenue is staff-only.
+    access: { visibility: public }
+    row_filters:
+      - { column: department, equals_attribute: department, unless_roles: [manager, admin], applies_to: protected_fields }
