@@ -1,4 +1,12 @@
+# ---------------------------------------------------------------------------
+# WebMind .gitignore
+# Local data, secrets, model artifacts and generated files stay on your machine.
+# Ignore rules here only stop git from tracking them; nothing is ever deleted.
+# ---------------------------------------------------------------------------
+
+# Project specification / personal reference material (kept locally, not published)
 IDEA.md
+reff/
 
 # Python
 __pycache__/
@@ -15,28 +23,46 @@ venv/
 .coverage
 htmlcov/
 
-# Node
+# Node (the compiled React SDK is rebuilt by `npm run build`)
 node_modules/
 sdk/react/dist/
 *.tsbuildinfo
 
-# Secrets and local configuration — never commit these
+# Secrets and local configuration: never commit these
 .env
 .env.*
 !.env.example
 *.pem
 *.key
 webmind.local.yaml
+*.local.yaml
 
-# Runtime data (indexes, object store, exports, demo databases)
+# Runtime data: indexes, object stores, exports, demo databases, logs
 data/
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
 *.sqlite
 *.sqlite3
 examples/**/generated/
+*.log
+logs/
 
-# Editors / OS
+# Language-model and embedding artifacts (large; download them locally, e.g. with Ollama)
+*.gguf
+*.ggml
+*.safetensors
+*.onnx
+*.pt
+*.pth
+*.ckpt
+models/
+.ollama/
+
+# Local tooling and editors
+.claude/settings.local.json
+.codegraph/
 .vscode/
 .idea/
 .DS_Store
