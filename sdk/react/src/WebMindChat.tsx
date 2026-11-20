@@ -1,159 +1,268 @@
-import { useState, type FormEvent } from "react";
-import { ChartView } from "./ChartView.js";
-import { safeHref } from "./client.js";
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent } from "react";
+import { svgToStandalone, type ClientExportMode } from "./core/exports.js";
 import { useWebMind, type ChatTurn } from "./context.js";
-import type { ChatResponse, ExportRef, TableResult } from "./types.js";
+import { ChartCard, FileCard, Icon, MessageActions, ResultTable, Rich, Sources, type ExportContext } from "./ui.js";
+import { safeHttpUrl } from "./core/richtext.js";
+import type { ExportRef, Me } from "./types.js";
+import { downloadBlob } from "./core/exports.js";
+
+export type WebMindTheme = "auto" | "light" | "dark";
 
 export interface WebMindChatProps {
   title?: string;
+  /** Overrides the identity line ("Signed in as ..." / "Public visitor") under the title. */
+  subtitle?: string;
+  /** Where anonymous visitors can sign in; shows a "Sign in" link next to "Public visitor". */
+  loginUrl?: string;
   placeholder?: string;
   className?: string;
-  /** Show the tool trace (intent + tools) under each answer — useful while integrating. */
+  /** Quick-start prompts shown in the empty state. */
+  suggestions?: string[];
+  /** Light, dark, or follow the system (default). */
+  theme?: WebMindTheme;
+  /** Accent color override (any CSS color). */
+  accent?: string;
+  /**
+   * Client-side exports of what the user already sees. "aggregates" (default) allows charts and
+   * statistics; raw record tables use WebMind's permission-checked server export. "off" hides them.
+   */
+  clientExports?: ClientExportMode;
+  /** Show the tool trace (intent + tools) under each answer: useful while integrating. */
   debug?: boolean;
+  /** Renders a close button in the header (used by the floating variant). */
+  onClose?: () => void;
 }
 
-/**
- * Ready-made chat UI. All server content is rendered as React text nodes (no
- * dangerouslySetInnerHTML), and links are restricted to http(s).
- */
-export function WebMindChat({ title = "Ask this site", placeholder = "Ask a question…", className, debug }: WebMindChatProps) {
-  const { turns, ask, pending, reset } = useWebMind();
+/** The chat surface itself (no outer container). */
+function ChatPanel({ title = "Ask this site", subtitle, loginUrl, placeholder = "Ask a question", suggestions, clientExports = "aggregates", debug, onClose }: WebMindChatProps) {
+  const { turns, ask, pending, reset, client } = useWebMind();
   const [input, setInput] = useState("");
+  const [me, setMe] = useState<Me | null>(null);
+  useEffect(() => {
+    let alive = true;
+    client.me().then((m) => alive && setMe(m)).catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [client]);
+  const identity = me ? (me.authenticated ? `Signed in as ${me.user_id}${me.roles.length ? " · " + me.roles.join(", ") : ""}` : "Public visitor") : "Answers cite their sources";
+  const login = me && !me.authenticated ? safeHttpUrl(loginUrl) : undefined;
+  const log = useRef<HTMLDivElement>(null);
+  const field = useRef<HTMLTextAreaElement>(null);
 
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    const q = input.trim();
+  useEffect(() => {
+    log.current?.scrollTo({ top: log.current.scrollHeight });
+  }, [turns]);
+
+  const send = (text: string) => {
+    const q = text.trim();
     if (!q || pending) return;
     setInput("");
+    if (field.current) field.current.style.height = "auto";
     void ask(q);
+  };
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    send(input);
+  };
+  const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      send(input);
+    }
   };
 
   return (
-    <section className={["wm-chat", className].filter(Boolean).join(" ")} aria-label={title}>
+    <section className="wm-chat" aria-label={title}>
       <header className="wm-header">
-        <strong>{title}</strong>
-        {turns.length > 0 && (
-          <button type="button" className="wm-reset" onClick={reset}>
-            New conversation
-          </button>
-        )}
+        <div className="wm-title-wrap">
+          <div className="wm-avatar">
+            <Icon name="sparkle" size={18} />
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <div className="wm-title">{title}</div>
+            <div className="wm-subtitle">
+              <span className={"wm-dot" + (me?.authenticated ? " wm-on" : "")} />
+              <span className="wm-sub-text">{subtitle ?? identity}</span>
+              {login && !subtitle && <a href={login}>Sign in</a>}
+            </div>
+          </div>
+        </div>
+        <div className="wm-header-actions">
+          {turns.length > 0 && (
+            <button type="button" className="wm-icon-btn" aria-label="New conversation" title="New conversation" onClick={reset}>
+              <Icon name="compose" />
+            </button>
+          )}
+          {onClose && (
+            <button type="button" className="wm-icon-btn" aria-label="Close" title="Close" onClick={onClose}>
+              <Icon name="close" />
+            </button>
+          )}
+        </div>
       </header>
-      <div className="wm-log" role="log" aria-live="polite">
-        {turns.map((t) => (
-          <Turn key={t.id} turn={t} debug={debug} />
-        ))}
+
+      <div className="wm-log" role="log" aria-live="polite" ref={log}>
+        {turns.length === 0 ? (
+          <div className="wm-empty">
+            <div className="wm-avatar">
+              <Icon name="sparkle" size={26} />
+            </div>
+            <h2>How can I help?</h2>
+            <p>Ask about this site, look up information, or request a chart or table.</p>
+            {suggestions && suggestions.length > 0 && (
+              <div className="wm-chips">
+                {suggestions.slice(0, 4).map((s) => (
+                  <button key={s} type="button" className="wm-chip" onClick={() => send(s)}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          turns.map((t, i) => <Turn key={t.id} turn={t} last={i === turns.length - 1} mode={clientExports} debug={debug} onAsk={send} />)
+        )}
       </div>
-      <form className="wm-form" onSubmit={submit}>
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder={placeholder}
-          maxLength={4000}
-          aria-label="Your question"
-        />
-        <button type="submit" disabled={pending || !input.trim()}>
-          Send
-        </button>
+
+      <form className="wm-composer" onSubmit={submit}>
+        <div className="wm-field">
+          <textarea
+            ref={field}
+            className="wm-input"
+            rows={1}
+            value={input}
+            placeholder={placeholder}
+            maxLength={4000}
+            aria-label="Your question"
+            onChange={(e) => {
+              setInput(e.target.value);
+              e.target.style.height = "auto";
+              e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
+            }}
+            onKeyDown={onKey}
+          />
+          <button type="submit" className="wm-send" aria-label="Send" disabled={pending || !input.trim()}>
+            <Icon name="send" size={16} />
+          </button>
+        </div>
       </form>
     </section>
   );
 }
 
-function Turn({ turn, debug }: { turn: ChatTurn; debug?: boolean }) {
+function Turn({ turn, last, mode, debug, onAsk }: { turn: ChatTurn; last: boolean; mode: ClientExportMode; debug?: boolean; onAsk: (q: string) => void }) {
+  const { client } = useWebMind();
   const r = turn.response;
+  const stack = useRef<HTMLDivElement>(null);
+  const [focus, setFocus] = useState<{ n: number; tick: number } | null>(null);
+  const [dlError, setDlError] = useState<string | null>(null);
+  const ctx: ExportContext | null = r ? { question: turn.question, response: r, mode, onAsk } : null;
+
+  const download = async (f: ExportRef) => {
+    try {
+      downloadBlob(await client.download(f), f.filename);
+      setDlError(null);
+    } catch {
+      setDlError("This download has expired or is not available.");
+    }
+  };
+  const chartSvg = () => {
+    const s = stack.current?.querySelector("svg[data-wm-chart]");
+    return s ? svgToStandalone(s as SVGSVGElement) : null;
+  };
+
   return (
     <article className="wm-turn">
-      <p className="wm-question">{turn.question}</p>
-      {turn.error && <p className="wm-error">{turn.error}</p>}
-      {!r && turn.pending && <p className="wm-answer">{turn.partial || "…"}</p>}
-      {r && <Answer response={r} debug={debug} />}
+      <div className="wm-row wm-user">
+        <div className="wm-bubble">{turn.question}</div>
+      </div>
+      <div className="wm-row wm-assistant">
+        <div className="wm-stack" ref={stack}>
+          {turn.error && (
+            <div className="wm-bubble wm-error" role="alert">
+              {turn.error}
+              <button type="button" className="wm-retry" onClick={() => onAsk(turn.question)}>
+                Try again
+              </button>
+            </div>
+          )}
+          {turn.pending && !turn.partial && !r && (
+            <div className="wm-bubble" aria-label="Assistant is typing">
+              <span className="wm-typing"><i /><i /><i /></span>
+            </div>
+          )}
+          {!r && turn.partial && (
+            <div className="wm-bubble wm-caret">
+              <Rich text={turn.partial} />
+            </div>
+          )}
+          {r && (
+            <div className="wm-bubble">
+              <Rich text={r.answer} onCite={r.citations.length ? (n) => setFocus({ n, tick: Date.now() }) : undefined} />
+            </div>
+          )}
+          {r && ctx && r.chart && <ChartCard spec={r.chart} ctx={ctx} />}
+          {r && ctx && r.table && !r.chart && r.table.rows.length > 0 && <ResultTable table={r.table} ctx={ctx} />}
+          {r?.export && <FileCard file={r.export} onDownload={download} />}
+          {dlError && <div className="wm-note" role="alert">{dlError}</div>}
+          {r && <Sources citations={r.citations} focus={focus} />}
+          {r && ctx && (last || true) && <MessageActions ctx={ctx} chartSvg={chartSvg} />}
+          {debug && r && (
+            <div className="wm-debug">
+              intent: {r.intent} · tools: {r.tools.map((t) => `${t.tool}(${t.status})`).join(", ") || "none"}
+              {r.warnings.length > 0 && ` · warnings: ${r.warnings.join(", ")}`}
+            </div>
+          )}
+        </div>
+      </div>
     </article>
   );
 }
 
-function Answer({ response: r, debug }: { response: ChatResponse; debug?: boolean }) {
+function rootProps(theme: WebMindTheme, accent?: string): { "data-theme": WebMindTheme; style?: CSSProperties } {
+  return { "data-theme": theme, style: accent ? ({ "--wm-accent": accent } as CSSProperties) : undefined };
+}
+
+/**
+ * Ready-made inline chat (give its container a height). All server content is rendered as React
+ * elements (no dangerouslySetInnerHTML) and links are restricted to http(s).
+ * Import the styles once: `import "@webmind/react/styles.css"`.
+ */
+export function WebMindChat({ theme = "auto", accent, className, ...rest }: WebMindChatProps) {
   return (
-    <div className="wm-answer">
-      <p style={{ whiteSpace: "pre-wrap" }}>{r.answer}</p>
-      {r.chart && <ChartView spec={r.chart} />}
-      {r.table && !r.chart && <DataTable table={r.table} />}
-      {r.export && <ExportButton exportRef={r.export} />}
-      {r.citations.length > 0 && (
-        <ol className="wm-citations">
-          {r.citations.map((c) => {
-            const href = safeHref(c.url);
-            const label = [c.title, c.section && c.section !== c.title ? c.section : null].filter(Boolean).join(" — ");
-            return (
-              <li key={c.index} value={c.index}>
-                {href ? (
-                  <a href={href} target="_blank" rel="noopener noreferrer">
-                    {label || href}
-                  </a>
-                ) : (
-                  label
-                )}
-              </li>
-            );
-          })}
-        </ol>
-      )}
-      {debug && (
-        <p className="wm-debug">
-          intent: {r.intent} · tools: {r.tools.map((t) => `${t.tool}(${t.status})`).join(", ") || "none"}
-          {r.warnings.length > 0 && ` · warnings: ${r.warnings.join(", ")}`}
-        </p>
-      )}
+    <div className={["wm", "wm-inline", className].filter(Boolean).join(" ")} {...rootProps(theme, accent)}>
+      <ChatPanel {...rest} />
     </div>
   );
 }
 
-function DataTable({ table }: { table: TableResult }) {
-  return (
-    <div className="wm-table" style={{ overflowX: "auto" }}>
-      <table>
-        <thead>
-          <tr>
-            {table.columns.map((c) => (
-              <th key={c}>{c}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {table.rows.slice(0, 100).map((row, i) => (
-            <tr key={i}>
-              {table.columns.map((c) => (
-                <td key={c}>{row[c] == null ? "" : String(row[c])}</td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {table.applied_filters.length > 0 && <p className="wm-filters">Filters: {table.applied_filters.join("; ")}</p>}
-    </div>
-  );
+export interface WebMindFloatingProps extends WebMindChatProps {
+  side?: "left" | "right";
+  defaultOpen?: boolean;
 }
 
-function ExportButton({ exportRef }: { exportRef: ExportRef }) {
-  const { client } = useWebMind();
-  const [error, setError] = useState<string | null>(null);
-  const download = async () => {
-    try {
-      const blob = await client.download(exportRef);
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = exportRef.filename;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    } catch {
-      setError("The export has expired or is not available.");
-    }
-  };
+/** Floating launcher + panel, the React equivalent of the `<script>` widget. */
+export function WebMindFloating({ theme = "auto", accent, side = "right", defaultOpen = false, className, onClose: _onClose, ...rest }: WebMindFloatingProps) {
+  const [open, setOpen] = useState(defaultOpen);
+  useEffect(() => {
+    if (!open) return;
+    const esc = (e: globalThis.KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("keydown", esc);
+    return () => document.removeEventListener("keydown", esc);
+  }, [open]);
   return (
-    <p className="wm-export">
-      <button type="button" onClick={download}>
-        Download {exportRef.filename} ({exportRef.row_count} rows)
-      </button>
-      {error && <span className="wm-error"> {error}</span>}
-    </p>
+    <div className={["wm", "wm-float", className].filter(Boolean).join(" ")} data-side={side} data-open={open} {...rootProps(theme, accent)}>
+      {open && (
+        <div className="wm-panel" role="dialog" aria-label={rest.title ?? "Ask this site"}>
+          <ChatPanel {...rest} onClose={() => setOpen(false)} />
+        </div>
+      )}
+      {!open && (
+        <button type="button" className="wm-launcher" aria-label={rest.title ?? "Ask this site"} onClick={() => setOpen(true)}>
+          <Icon name="chat" size={26} />
+        </button>
+      )}
+    </div>
   );
 }

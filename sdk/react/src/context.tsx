@@ -9,6 +9,8 @@ export interface WebMindProviderProps {
   getAccessToken?: TokenProvider;
   /** Use server-sent events for token-by-token answers (default true). */
   streaming?: boolean;
+  /** Pre-populated conversation (demos, tests, server rendering). */
+  initialTurns?: ChatTurn[];
   children?: ReactNode;
 }
 
@@ -34,9 +36,9 @@ const Ctx = createContext<WebMindContextValue | null>(null);
 let counter = 0;
 const nextId = () => `t${Date.now().toString(36)}${(counter++).toString(36)}`;
 
-export function WebMindProvider({ endpoint, getAccessToken, streaming = true, children }: WebMindProviderProps) {
+export function WebMindProvider({ endpoint, getAccessToken, streaming = true, initialTurns, children }: WebMindProviderProps) {
   const client = useMemo(() => new WebMindClient({ endpoint, getAccessToken }), [endpoint, getAccessToken]);
-  const [turns, setTurns] = useState<ChatTurn[]>([]);
+  const [turns, setTurns] = useState<ChatTurn[]>(initialTurns ?? []);
   const conversation = useRef<string | null>(null);
   const update = (id: string, patch: Partial<ChatTurn>) =>
     setTurns((ts) => ts.map((t) => (t.id === id ? { ...t, ...patch } : t)));

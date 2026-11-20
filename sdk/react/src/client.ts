@@ -4,7 +4,7 @@
  * Never put administrator keys, database credentials or JWT secrets in browser code:
  * `getAccessToken` should call your own backend, which signs a short-lived user token.
  */
-import type { ChatResponse, ExportRef, StreamEvent, TableResult, TokenProvider } from "./types.js";
+import type { ChatResponse, ExportRef, Me, StreamEvent, TableResult, TokenProvider } from "./types.js";
 
 export class WebMindError extends Error {
   constructor(public readonly status: number, message: string) {
@@ -54,6 +54,11 @@ export class WebMindClient {
       throw new WebMindError(res.status, detail);
     }
     return (await res.json()) as T;
+  }
+
+  /** Who WebMind believes the caller is: for "Signed in as ..." / "Public visitor" displays. */
+  me(): Promise<Me> {
+    return this.request("/v1/me");
   }
 
   chat(message: string, conversationId?: string | null): Promise<ChatResponse> {

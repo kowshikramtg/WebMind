@@ -84,6 +84,15 @@ export interface ChatResponse {
   warnings: string[];
 }
 
+/** The caller's verified identity as WebMind sees it (GET /v1/me). */
+export interface Me {
+  authenticated: boolean;
+  user_id: string | null;
+  roles: string[];
+  tenant_id: string;
+  capabilities: string[];
+}
+
 export type StreamEvent =
   | { type: "plan"; intent: string; tools: string[]; conversation_id: string }
   | { type: "token"; text: string }

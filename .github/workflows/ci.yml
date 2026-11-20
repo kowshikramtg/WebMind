@@ -76,9 +76,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
       - run: npm ci
       - run: npm run build
+      - name: Committed widget bundle must be current
+        run: git diff --exit-code -- ../../src/webmind/api/static/webmind-widget.js
       - run: npm test
 
   docker:
