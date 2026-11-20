@@ -13,6 +13,7 @@ from __future__ import annotations
 import calendar
 import json
 import re
+from collections.abc import Callable
 from datetime import date
 from typing import Any, Literal
 
@@ -191,8 +192,17 @@ def _word_in(word: str, t: str) -> bool:
 
 
 class RuleBasedPlanner:
-    def __init__(self, today: date | None = None) -> None:
+    def __init__(
+        self, today: date | None = None, column_ok: Callable[[Principal, DatasetConfig, str], bool] | None = None
+    ) -> None:
         self.today = today
+        # Lets the planner avoid *defaulting* to columns the caller may not use. Columns the user
+        # names explicitly are still planned, so the policy engine denies (and audits) them.
+        self.column_ok = column_ok or (lambda _p, _d, _c: True)
+        self._principal: Principal | None = None
+
+    def _usable(self, ds: DatasetConfig, col_name: str) -> bool:
+        return self._principal is None or self.column_ok(self._principal, ds, col_name)
 
     # -- dataset & column extraction ------------------------------------------------
     def match_datasets(self, t: str, datasets: list[DatasetConfig]) -> list[DatasetConfig]:
@@ -213,7 +223,7 @@ class RuleBasedPlanner:
         if fn == "count" and not cols:
             return [{"fn": "count"}]
         if not cols:
-            cols = [c for c in ds.columns if c.aggregatable][:2]
+            cols = [c for c in ds.columns if c.aggregatable and self._usable(ds, c.name)][:2]
         if not cols:
             return [{"fn": "count"}]
         return [{"fn": fn, "column": c.name} for c in cols]
@@ -247,6 +257,7 @@ class RuleBasedPlanner:
         self, question: str, principal: Principal, datasets: list[DatasetConfig], state: dict[str, Any] | None = None
     ) -> Plan:
         state = state or {}
+        self._principal = principal  # plan() is synchronous, so this cannot interleave across requests
         t = " ".join(question.lower().split())
         last = state.get("last_query")
 
@@ -382,7 +393,7 @@ class RuleBasedPlanner:
             if _CHART.search(t):
                 if "histogram" in t or "distribution" in t:
                     col = (metrics[0].get("column") if metrics else None) or next(
-                        (c.name for c in ds.columns if c.aggregatable), None
+                        (c.name for c in ds.columns if c.aggregatable and self._usable(ds, c.name)), None
                     )
                     return Plan(
                         intent="visualization",
@@ -414,7 +425,7 @@ class RuleBasedPlanner:
                 if bucket:
                     agg["time_bucket"] = bucket
                 if not group_by and not bucket:
-                    agg["group_by"] = [c.name for c in ds.columns if c.groupable][:1]
+                    agg["group_by"] = [c.name for c in ds.columns if c.groupable and self._usable(ds, c.name)][:1]
                 return Plan(
                     intent="visualization",
                     calls=[ToolCall(tool="generate_chart", arguments={"chart_type": ctype, "query": agg})],
@@ -425,7 +436,7 @@ class RuleBasedPlanner:
                 if bucket:
                     agg["time_bucket"] = bucket
                 if _COMPARE.search(t) and not group_by and not bucket:
-                    agg["group_by"] = [c.name for c in ds.columns if c.groupable][:1]
+                    agg["group_by"] = [c.name for c in ds.columns if c.groupable and self._usable(ds, c.name)][:1]
                 if re.search(r"\bperformance\b", t) and not bucket and re.search(r"\bmonth", t):
                     agg["time_bucket"] = "month"
                 intent: Intent = "comparison" if _COMPARE.search(t) else "statistics"

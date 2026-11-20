@@ -194,3 +194,19 @@ def test_webhook_signature(client, runtime):
 def test_widget_is_served(client):
     r = client.get("/v1/widget.js")
     assert r.status_code == 200 and "textContent" in r.text and "innerHTML" not in r.text.replace("never innerHTML", "")
+
+
+def test_me_endpoint_reports_the_verified_identity_and_denials_hint_at_signing_in(client):
+    anon = client.get("/v1/me").json()
+    assert anon["authenticated"] is False and anon["user_id"] is None and anon["roles"] == ["public"]
+    assert "analytics" in anon["capabilities"] and "records:read" not in anon["capabilities"]
+    me = client.get("/v1/me", headers={"Authorization": f"Bearer {REVIEWER}"}).json()
+    assert me["authenticated"] is True and me["user_id"] == "rev-1" and me["roles"] == ["reviewer"]
+    assert "records:read" in me["capabilities"] and "export" in me["capabilities"]
+    assert client.get("/v1/me", headers={"Authorization": "Bearer garbage"}).status_code == 401
+    # An anonymous denial tells the visitor that signing in can change the outcome; a signed-in denial does not.
+    hint = ask(client, "Show all project records")
+    assert hint["tools"][0]["status"] == "denied" and "sign in" in hint["answer"].lower()
+    student = token("stu-1", ["student"])
+    signed_in = ask(client, "Show all project records", student)
+    assert signed_in["tools"][0]["status"] == "denied" and "public visitor" not in signed_in["answer"]

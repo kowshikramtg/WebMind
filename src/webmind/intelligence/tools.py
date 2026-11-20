@@ -194,6 +194,7 @@ class CompareRecords(Tool):
             total_rows=len(rows),
             dataset=args.dataset,
             applied_filters=sorted(set(ta.applied_filters) | set(tb.applied_filters)),
+            executed_sql=f"{ta.executed_sql}\n-- period B --\n{tb.executed_sql}",
         )
         x = dims[0] if dims else "label"
         chart_rows = rows if dims else [{"label": args.metric.alias, **r} for r in rows]
@@ -490,6 +491,8 @@ class ToolRegistry:
             if output.table is not None:
                 details["rows"] = len(output.table.rows)
                 details["applied_filters"] = output.table.applied_filters
+                if output.table.executed_sql:
+                    details["sql"] = output.table.executed_sql
             audit.record(
                 ctx.principal,
                 f"tool:{name}",

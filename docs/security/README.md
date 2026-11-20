@@ -20,7 +20,7 @@
 5. **Read-only is technical.** Connectors have no write methods; the config rejects
    `read_only_default: false`; write-like requests are refused and audited. The only
    things WebMind writes are its own index, audit log and expiring export files.
-6. **Defense in depth.** Retrieved rows are re-checked against the principal after loading.
+6. **Defense in depth.** Column-level access rules cover every use of a field (select, filter, group, aggregate, order, date range), so a hidden field cannot be probed through filters. Public analytics is a deliberate, per-dataset, per-field opt-in. Retrieved rows are re-checked against the principal after loading.
    Conversations are bound to tenant + user and store only questions and the last query
    spec, never earlier answers, and every follow-up is re-authorized.
 

@@ -7,6 +7,7 @@ Admin endpoints use `X-WebMind-Admin-Key` and are disabled unless `server.admin_
 
 | Endpoint | Notes |
 | --- | --- |
+| `GET /v1/me` | The caller's verified identity (`authenticated`, `user_id`, `roles`, `tenant_id`, `capabilities`). Used by the UI to show "Signed in as ..." / "Public visitor"; it only describes the caller's own token. |
 | `POST /v1/chat` | Body `{message, conversation_id?}` → `ChatResponse`: `answer`, `intent`, `citations[]`, `navigation[]`, `table`, `chart`, `export`, `statistics`, `tools[]` (status `ok`/`denied`/`error`), `grounded`, `llm_used`, `warnings[]`. |
 | `POST /v1/chat/stream` | Server-sent events: `plan`, `token`*, `final` (`response` = ChatResponse), or `error`. |
 | `POST /v1/search` | `{query, top_k?}` → permission-filtered chunks with scores, deep links, freshness. |

@@ -146,6 +146,8 @@ class TableResult(BaseModel):
     truncated: bool = False
     dataset: str | None = None
     applied_filters: list[str] = Field(default_factory=list)
+    # SQL actually executed. Audit-only: excluded from API responses to avoid leaking schema.
+    executed_sql: str | None = Field(default=None, exclude=True)
 
 
 class ExportRef(BaseModel):

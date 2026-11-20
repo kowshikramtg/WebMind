@@ -125,4 +125,6 @@ async def test_data_explanations_receive_only_authorized_rows(demo_dir):
     payload = json.loads(llm.prompts[-1])
     assert payload["rows"] and {r["department"] for r in payload["rows"]} == {"research"}
     assert res.llm_used
+    # Policy limits are stated deterministically, whatever the model wrote.
+    assert "Access limits applied to this result: department = research (your department)" in res.answer
     await rt.close()

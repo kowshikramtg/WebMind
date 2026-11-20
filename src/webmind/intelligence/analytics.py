@@ -14,7 +14,7 @@ import math
 import statistics
 import threading
 import time
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -218,6 +218,33 @@ class DatasetRegistry:
             d for d in self.cfg.datasets if self.policy.can_access(principal, d.access, tenant_id=self.cfg.tenant_of(d))
         ]
 
+    # -- field-level policy ---------------------------------------------------------
+    def column_allowed(self, principal: Principal, ds: DatasetConfig, name: str) -> bool:
+        """May ``principal`` reference column ``name`` in any part of a query?"""
+        col = ds.column(name)
+        if col is None:
+            return False
+        if col.access is None:
+            return True
+        return bool(self.policy.can_access(principal, col.access, tenant_id=self.cfg.tenant_of(ds)))
+
+    def require_column(self, principal: Principal, ds: DatasetConfig, name: str) -> None:
+        if ds.column(name) is not None and not self.column_allowed(principal, ds, name):
+            raise AuthorizationError(
+                f"field '{name}' of dataset '{ds.id}' is not available to this user", action="field", resource=ds.id
+            )
+
+    def view_for(self, principal: Principal, ds: DatasetConfig) -> DatasetConfig:
+        """Copy of ``ds`` without the columns ``principal`` cannot use (e.g. for LLM planning prompts)."""
+        return ds.model_copy(update={"columns": [c for c in ds.columns if self.column_allowed(principal, ds, c.name)]})
+
+    @staticmethod
+    def _sql_text(stmt: Select, engine: Engine) -> str:
+        try:
+            return str(stmt.compile(dialect=engine.dialect, compile_kwargs={"literal_binds": True}))
+        except Exception:  # literal rendering is best-effort; never fail a query over audit text
+            return str(stmt)
+
     def _engine(self, ds: DatasetConfig) -> Engine:
         with self._lock:
             if ds.connection not in self._engines:
@@ -252,15 +279,24 @@ class DatasetRegistry:
         principal: Principal,
         date_from: date | None,
         date_to: date | None,
+        used: Iterable[str] = (),
+        raw: bool = True,
     ) -> tuple[list[ColumnElement], list[str]]:
-        """Mandatory policy filters + the effective date range. Never optional."""
+        """Mandatory policy filters + the effective date range. Never optional.
+
+        ``used`` are the columns the query reads; ``raw`` marks queries that return individual rows.
+        A policy declared ``applies_to: protected_fields`` is skipped only for aggregate queries
+        that read no column carrying its own access rule."""
+        protected = raw or any((c := ds.column(n)) is not None and c.access is not None for n in used)
         conds: list[ColumnElement] = []
         notes: list[str] = []
         if ds.tenant_column:
             conds.append(table.c[ds.tenant_column] == principal.tenant_id)
             notes.append(f"tenant = {principal.tenant_id}")
         for rf in ds.row_filters:
-            if self.policy.exempt(principal, rf.unless_roles):
+            if self.policy.exempt(principal, rf.unless_roles) or (
+                rf.applies_to == "protected_fields" and not protected
+            ):
                 continue
             val = principal.attributes.get(rf.equals_attribute)
             if val is None or val == [] or val == "":
@@ -273,9 +309,15 @@ class DatasetRegistry:
                 conds.append(table.c[rf.column] == str(val))
                 notes.append(f"{rf.column} = {val} (your {rf.equals_attribute})")
 
+        if (date_from or date_to) and ds.date_column:
+            self.require_column(principal, ds, ds.date_column)
         eff_from, eff_to = date_from, date_to
         dw = ds.date_window
-        if dw and not self.policy.exempt(principal, dw.unless_roles):
+        if (
+            dw
+            and not self.policy.exempt(principal, dw.unless_roles)
+            and not (dw.applies_to == "protected_fields" and not protected)
+        ):
             for attr, is_from in ((dw.from_attribute, True), (dw.to_attribute, False)):
                 if not attr:
                     continue
@@ -289,7 +331,10 @@ class DatasetRegistry:
                 else:
                     eff_to = min(eff_to, bound) if eff_to else bound
             if eff_from != date_from or eff_to != date_to:
-                notes.append(f"date range limited to your permitted window ({eff_from} → {eff_to})")
+                if eff_from and eff_to and eff_from > eff_to:
+                    notes.append("the requested dates fall outside your permitted window, so no rows can match")
+                else:
+                    notes.append(f"date range limited to your permitted window ({eff_from} → {eff_to})")
         if (eff_from or eff_to) and not ds.date_column:
             raise QueryValidationError(f"dataset '{ds.id}' has no date column; date ranges are not supported")
         if ds.date_column:
@@ -305,13 +350,16 @@ class DatasetRegistry:
             notes.append(f"{ds.date_column} between {eff_from or '…'} and {eff_to or '…'}")
         return conds, notes
 
-    def _user_filters(self, ds: DatasetConfig, table: Table, filters: Sequence[Filter]) -> tuple[list, list[str]]:
+    def _user_filters(
+        self, principal: Principal, ds: DatasetConfig, table: Table, filters: Sequence[Filter]
+    ) -> tuple[list, list[str]]:
         conds: list[ColumnElement] = []
         notes: list[str] = []
         for f in filters:
             col_cfg = ds.column(f.column)
             if col_cfg is None or not col_cfg.filterable:
                 raise QueryValidationError(f"column '{f.column}' is not filterable in dataset '{ds.id}'")
+            self.require_column(principal, ds, f.column)  # a filter on a hidden field is an inference oracle
             col = table.c[f.column]
 
             def coerce(v: Any, ctype: str = col_cfg.type, column: str = f.column) -> Any:
@@ -359,17 +407,30 @@ class DatasetRegistry:
         for c in cols:
             if ds.column(c) is None:
                 raise QueryValidationError(f"unknown column '{c}' in dataset '{ds.id}'")
-        if ds.tenant_column and ds.tenant_column in cols and q.columns is None:
-            cols = [c for c in cols if c != ds.tenant_column]
-        scope, notes = self._scope(ds, table, principal, q.date_from, q.date_to)
-        user, unotes = self._user_filters(ds, table, q.filters)
+        if q.columns is None:
+            # Default projection: only what the caller may see (hidden fields are omitted, not errors).
+            cols = [c for c in cols if self.column_allowed(principal, ds, c)]
+            if ds.tenant_column:
+                cols = [c for c in cols if c != ds.tenant_column]
+        else:
+            for c in cols:  # explicitly requested hidden fields are denied (and audited)
+                self.require_column(principal, ds, c)
+        if not cols:
+            raise AuthorizationError(f"no fields of dataset '{ds.id}' are available to this user", resource=ds.id)
+        scope, notes = self._scope(ds, table, principal, q.date_from, q.date_to, used=cols, raw=True)
+        user, unotes = self._user_filters(principal, ds, table, q.filters)
         limit = min(q.limit or ds.max_rows, ds.max_rows)
         stmt = select(*[table.c[c] for c in cols]).where(and_(true(), *scope, *user))
         order = q.order_by or ds.date_column
         if order:
             if ds.column(order) is None:
                 raise QueryValidationError(f"cannot order by unknown column '{order}'")
-            stmt = stmt.order_by(table.c[order].desc() if q.descending else table.c[order].asc())
+            if q.order_by:
+                self.require_column(principal, ds, order)
+            elif not self.column_allowed(principal, ds, order):
+                order = None
+            if order:
+                stmt = stmt.order_by(table.c[order].desc() if q.descending else table.c[order].asc())
         return stmt.limit(limit + 1), ds, limit, notes + unotes
 
     def compile_aggregate(
@@ -383,12 +444,14 @@ class DatasetRegistry:
         if q.time_bucket:
             if not ds.date_column:
                 raise QueryValidationError(f"dataset '{ds.id}' has no date column for time buckets")
+            self.require_column(principal, ds, ds.date_column)
             dims.append(_bucket(table.c[ds.date_column], q.time_bucket, dialect).label("period"))
             dim_names.append("period")
         for g in q.group_by:
             cc = ds.column(g)
             if cc is None or not cc.groupable:
                 raise QueryValidationError(f"column '{g}' cannot be used for grouping in '{ds.id}'")
+            self.require_column(principal, ds, g)
             dims.append(table.c[g].label(g))
             dim_names.append(g)
         measures: list[ColumnElement] = []
@@ -401,12 +464,14 @@ class DatasetRegistry:
             cc = ds.column(m.column)
             if cc is None:
                 raise QueryValidationError(f"unknown column '{m.column}' in dataset '{ds.id}'")
+            self.require_column(principal, ds, m.column)
             if m.fn != "count" and not cc.aggregatable:
                 raise QueryValidationError(f"column '{m.column}' cannot be aggregated with {m.fn}")
             fn = {"count": func.count, "sum": func.sum, "avg": func.avg, "min": func.min, "max": func.max}[m.fn]
             measures.append(fn(table.c[m.column]).label(m.alias))
-        scope, notes = self._scope(ds, table, principal, q.date_from, q.date_to)
-        user, unotes = self._user_filters(ds, table, q.filters)
+        used = {*q.group_by, *(m.column for m in q.metrics if m.column), *(f.column for f in q.filters)}
+        scope, notes = self._scope(ds, table, principal, q.date_from, q.date_to, used=used, raw=False)
+        user, unotes = self._user_filters(principal, ds, table, q.filters)
         limit = min(q.limit or ds.max_rows, ds.max_rows)
         stmt = select(*dims, *measures).where(and_(true(), *scope, *user))
         if dims:
@@ -458,6 +523,7 @@ class DatasetRegistry:
             truncated=truncated,
             dataset=ds.id,
             applied_filters=notes,
+            executed_sql=self._sql_text(stmt, self._engine(ds)),
         )
 
     async def aggregate(self, principal: Principal, q: AggregateQuery) -> tuple[TableResult, list[str]]:
@@ -469,7 +535,13 @@ class DatasetRegistry:
         rows = rows[:limit]
         cols = dims + [m.alias for m in q.metrics]
         return TableResult(
-            columns=cols, rows=rows, total_rows=len(rows), truncated=truncated, dataset=ds.id, applied_filters=notes
+            columns=cols,
+            rows=rows,
+            total_rows=len(rows),
+            truncated=truncated,
+            dataset=ds.id,
+            applied_filters=notes,
+            executed_sql=self._sql_text(stmt, self._engine(ds)),
         ), dims
 
     def dispose(self) -> None:

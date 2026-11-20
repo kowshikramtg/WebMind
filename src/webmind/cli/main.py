@@ -229,21 +229,27 @@ def cmd_sync(args: argparse.Namespace) -> int:
 def cmd_doctor(args: argparse.Namespace) -> int:
     problems = 0
     warnings = 0
+    # Legacy Windows consoles (cp1252) cannot print check marks; fall back to ASCII.
+    try:
+        "✔✘".encode(sys.stdout.encoding or "ascii")
+        OK, BAD, WARN = "✔", "✘", "!"
+    except (UnicodeEncodeError, LookupError):
+        OK, BAD, WARN = "[ok]", "[FAIL]", "[warn]"
 
     def ok(msg: str) -> None:
-        print(f"  ✔ {msg}")
+        print(f"  {OK} {msg}")
 
     def warn(msg: str) -> None:
         nonlocal warnings
         warnings += 1
-        print(f"  ! {msg}")
+        print(f"  {WARN} {msg}")
 
     def bad(msg: str) -> None:
         nonlocal problems
         problems += 1
-        print(f"  ✘ {msg}")
+        print(f"  {BAD} {msg}")
 
-    print(f"WebMind {__version__} — doctor")
+    print(f"WebMind {__version__} - doctor")
     try:
         cfg = _load(args)
         ok(f"configuration valid ({args.config})")
@@ -282,7 +288,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                         ],
                         max_tokens=256,
                     )
-                    ok(f"llm reachable: {rt.llm.info.provider}/{rt.llm.info.model} → {res.text.strip()[:20]!r}")
+                    ok(f"llm reachable: {rt.llm.info.provider}/{rt.llm.info.model} -> {res.text.strip()[:20]!r}")
                 except Exception as exc:
                     bad(f"llm unreachable: {exc}")
             for src in cfg.sources:

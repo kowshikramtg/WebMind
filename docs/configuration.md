@@ -76,6 +76,40 @@ See [INTEGRATION.md §3.2](../INTEGRATION.md#32-structured-data-datasets). Colum
 `row_filters` force `column == principal attribute` (missing attribute = no rows);
 `date_window` clamps queries to dates held in principal attributes; `unless_roles` exempts roles.
 
+**Publishing aggregates without a login.** Authorization has four independent layers; a request must
+pass all of them:
+
+1. *Capability* (`security.roles`): `analytics` allows aggregates and charts, `records:read` allows raw
+   rows, `export` allows downloads. Give `public` only `analytics` to allow anonymous statistics.
+2. *Dataset* (`datasets[].access`): `visibility: public` lets anyone with the capability use the dataset.
+3. *Field* (`columns[].access`): a column with its own access rule can only be referenced (selected,
+   filtered, grouped, aggregated, ordered, or used for a date range) by principals that rule admits.
+   Naming a hidden field is denied and audited; hidden fields are silently left out of default
+   projections and default chart metrics. Filtering on a hidden field is denied too, so it cannot be
+   used to probe values.
+4. *Row/date policy* (`row_filters`, `date_window`): `applies_to: all_queries` (default) always applies.
+   `applies_to: protected_fields` applies only to raw-row queries and to queries that read a protected
+   column, so aggregates over unprotected fields stay dataset-wide for everyone (staff never see less
+   than the public view).
+
+```yaml
+security:
+  roles:
+    public: { capabilities: [chat, search, navigate, "documents:read", analytics] }   # no records:read, no export
+datasets:
+  - id: projects
+    access: { visibility: public }
+    columns:
+      - { name: department, type: string, groupable: true }                           # public
+      - { name: budget, type: number, aggregatable: true,
+          access: { visibility: restricted, roles: [employee, admin] } }              # staff only
+    row_filters:
+      - { column: department, equals_attribute: department, unless_roles: [admin], applies_to: protected_fields }
+```
+
+The SQL that ran for each tool call (with literal values) is stored in the audit event's `details.sql`;
+it is never returned to API clients.
+
 ## Security keys
 
 ```yaml

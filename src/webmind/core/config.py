@@ -321,6 +321,11 @@ class ColumnConfig(_Model):
     values: list[str] | None = Field(
         default=None, description="Known categorical values; helps natural-language filter extraction"
     )
+    access: AccessRule | None = Field(
+        default=None,
+        description="Field-level access. If set, only principals admitted by this rule may reference the column "
+        "at all (select, filter, group, aggregate, order, date range). Unset = same as the dataset.",
+    )
 
 
 class RowFilterConfig(_Model):
@@ -334,6 +339,11 @@ class RowFilterConfig(_Model):
     column: str
     equals_attribute: str
     unless_roles: list[str] = Field(default_factory=list)
+    applies_to: Literal["all_queries", "protected_fields"] = Field(
+        default="all_queries",
+        description="'protected_fields' enforces this filter only for raw-row queries and for queries that read a "
+        "column with its own `access` rule; aggregates over unprotected columns are dataset-wide.",
+    )
 
 
 class DateWindowConfig(_Model):
@@ -342,6 +352,7 @@ class DateWindowConfig(_Model):
     from_attribute: str | None = None
     to_attribute: str | None = None
     unless_roles: list[str] = Field(default_factory=list)
+    applies_to: Literal["all_queries", "protected_fields"] = "all_queries"
 
 
 class DatasetConfig(_Model):

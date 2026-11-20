@@ -225,6 +225,18 @@ def create_app(config: WebMindConfig | None = None, *, runtime: WebMindRuntime |
         checks["llm"] = rt.llm.info.provider if rt.llm else "none (extractive answers)"
         return JSONResponse({"ready": ok, "checks": checks}, status_code=200 if ok else 503)
 
+    @app.get("/v1/me", tags=["runtime"])
+    async def me(p: P) -> dict[str, Any]:
+        """Who WebMind believes the caller is. Lets a UI show "Signed in as ..." vs "Public visitor"
+        (it only ever describes the caller's own verified identity)."""
+        return {
+            "authenticated": p.authenticated,
+            "user_id": p.user_id,
+            "roles": sorted(p.roles),
+            "tenant_id": p.tenant_id,
+            "capabilities": sorted(p.capabilities),
+        }
+
     # -- chat -----------------------------------------------------------------------
     @app.post("/v1/chat", response_model=ChatResponse, tags=["assistant"])
     async def chat(body: ChatRequest, p: P) -> ChatResponse:

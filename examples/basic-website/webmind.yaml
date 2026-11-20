@@ -15,7 +15,7 @@ app:
 server:
   host: 127.0.0.1
   port: 8080
-  cors_origins: ["http://localhost:8000", "http://127.0.0.1:8000"]
+  cors_origins: ["http://localhost:8000", "http://127.0.0.1:8000", "http://localhost:8001", "http://127.0.0.1:8001"]
   admin_api_key: ${WEBMIND_ADMIN_API_KEY:-}
 
 database:
@@ -50,7 +50,9 @@ security:
       secret: ${WEBMIND_JWT_SECRET}
   roles:
     public:
-      capabilities: [chat, search, navigate, "documents:read"]
+      # `analytics` = aggregates and charts only. Raw rows need `records:read`; downloads need `export`.
+      # Which datasets/fields are actually reachable is decided per dataset and per column below.
+      capabilities: [chat, search, navigate, "documents:read", analytics]
     student:
       inherits: [public]
     employee:
@@ -90,26 +92,30 @@ sources:
 datasets:
   - id: projects
     description: Institute projects with department, status, creation date and budget
+    # Public demo policy: visitors may chart/count projects by department, status and date (aggregates only).
+    # Project names and budgets are protected fields; raw rows need records:read (staff only).
     synonyms: [project, records, record]
     connection: sqlite:///./generated/records.db
     table: projects
     date_column: created_at
     columns:
-      - { name: id, type: integer, filterable: false }
-      - { name: name, type: string, description: Project name }
+      - { name: id, type: integer, filterable: false, access: { visibility: restricted, roles: [employee, reviewer, manager, admin] } }
+      - { name: name, type: string, description: Project name, access: { visibility: restricted, roles: [employee, reviewer, manager, admin] } }
       - { name: department, type: string, groupable: true, values: [engineering, research, admissions, finance] }
       - { name: status, type: string, groupable: true, values: [planned, active, completed] }
       - { name: created_at, type: date, label: Created }
-      - { name: budget, type: number, aggregatable: true }
-    access: { visibility: restricted, roles: [employee, reviewer, manager, admin] }
+      - { name: budget, type: number, aggregatable: true, access: { visibility: restricted, roles: [employee, reviewer, manager, admin] } }
+    access: { visibility: public }
     row_filters:
-      # Users only see their own department's rows unless they are managers/admins.
-      - { column: department, equals_attribute: department, unless_roles: [manager, admin] }
+      # Staff only see their own department's rows (raw records and protected fields such as budget),
+      # unless they are managers/admins. Aggregates over public fields are institute-wide.
+      - { column: department, equals_attribute: department, unless_roles: [manager, admin], applies_to: protected_fields }
     date_window:
       # Reviewers may only see records inside their assigned review window.
       from_attribute: review_from
       to_attribute: review_to
       unless_roles: [employee, manager, admin]
+      applies_to: protected_fields
     max_rows: 500
 
   - id: monthly_metrics
@@ -122,7 +128,8 @@ datasets:
       - { name: month, type: date }
       - { name: department, type: string, groupable: true, values: [engineering, research, admissions, finance] }
       - { name: registrations, type: integer, aggregatable: true }
-      - { name: revenue, type: number, aggregatable: true }
-    access: { visibility: restricted, roles: [employee, reviewer, manager, admin] }
+      - { name: revenue, type: number, aggregatable: true, access: { visibility: restricted, roles: [employee, reviewer, manager, admin] } }
+    # Public demo policy: monthly registrations per department are published statistics; revenue is staff-only.
+    access: { visibility: public }
     row_filters:
-      - { column: department, equals_attribute: department, unless_roles: [manager, admin] }
+      - { column: department, equals_attribute: department, unless_roles: [manager, admin], applies_to: protected_fields }
